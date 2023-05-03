@@ -70,39 +70,62 @@ class Corpus:
     def get_random_exchange(self):
         return random.choice(self.exchange_pairs)
     
+    def getBatchExchangeTensors(self,batch_size=1):
+        batch = []
+        Q_tensors = []
+        A_tensors = []
+        
+        #Get the batch of pairs
+        pairs = random.choices(self.exchange_pairs, k=batch_size)
+        
+        #A pair is a dictionary: { "Q":{"tokens":str,"indices":[]}, "A":{"tokens":str,"indices":[]} }
+
+        #Convert each pair to a tensor of its token indices
+        for pair in pairs:
+            q,a = self.pairToTensor(pair)
+            Q_tensors.append(q)
+            A_tensors.append(a)
+
+        #ref INM706 Lab 5
+        Q_tensors = torch.stack(Q_tensors)
+        A_tensors = torch.stack(A_tensors)
+        return pairs, (Q_tensors,A_tensors)
+
+    
     def pairToTensor(self,pair):
         #First convert the pair to list of indices
         #ref: https://pytorch.org/tutorials/intermediate/seq2seq_translation_tutorial.html
-        indices_pair = []
-        indices_pair.append(self.vocabulary.wordsToIndex(pair[0])) #Input
-        indices_pair.append(self.vocabulary.wordsToIndex(pair[1])) #Target
+        QandA = []
+        QandA.append(pair["Q"]["indices"].copy()) #Input
+        QandA.append(pair["A"]["indices"].copy()) #Target
         
         #We then standardize the length of each sequence, truncating
         #those above the length and padding those below
         #ref INM706 Lab5
         i = 0
-        for i in range(len(indices_pair)):
-            seq_len = len(indices_pair[i])
+        for i in range(2):
+            seq_len = len(QandA[i])
             
             #Truncate sequence if too long
-            if seq_len > self.max_seq_length: indices_pair[i] = indices_pair[i][:self.max_seq_length]
+            if seq_len > self.max_seq_length: QandA[i] = QandA[i][:self.max_seq_length]
 
             #Add the EOS
-            indices_pair[i].append(Vocabulary.EOS_index)
+            QandA[i].append(Vocabulary.EOS_index)
 
             #If the length of the original seq is less than the max, then pad
             if seq_len < (self.max_seq_length):
                 #ref: https://stackoverflow.com/questions/3438756/some-built-in-to-pad-a-list-in-python
-                indices_pair[i] += [Vocabulary.PAD_index] * (self.max_seq_length - seq_len)
+                QandA[i] += [Vocabulary.PAD_index] * (self.max_seq_length - seq_len)
             
             #Insert the SOS index
-            indices_pair[i].insert(0,Vocabulary.SOS_index)
+            QandA[i].insert(0,Vocabulary.SOS_index)
 
                                             
-        input_tensor = torch.tensor(indices_pair[0], dtype=torch.int64).view(-1,1)
-        target_tensor = torch.tensor(indices_pair[1], dtype=torch.int64).view(-1,1)
-        return input_tensor, target_tensor
+        Q_tensor = torch.tensor(QandA[0], dtype=torch.int64)
+        A_tensor = torch.tensor(QandA[1], dtype=torch.int64)
+        return Q_tensor, A_tensor
 
+    
     def wordToTensor(self,word):
         word_tensor = torch.tensor(self.vocabulary.wordsToIndex(word), dtype=torch.int64).view(-1,1)
         return word_tensor
@@ -117,12 +140,16 @@ class CornellMovieCorpus(Corpus):
 
         #Let's load the conversations
         self.movie_convos = self.load_movie_conversations()
+        
+        #create the vocabulary
+        self.create_vocabulary()
 
         #get the pairs of conversation exchanges
         self.exchange_pairs = self.create_exchange_pairs()
     
     def create_vocabulary(self):
         #Iterate through the list of movie lines and update the words in the vocabulary
+        print("Creating vocabulary...")
         self.vocabulary = Vocabulary()
         for sentence in self.movie_lines.values():
             self.vocabulary.addWords(sentence["prepped_text"])
@@ -167,11 +194,11 @@ class CornellMovieCorpus(Corpus):
             # The'yre also encapsualted in quotes so remove them
             convo = [lineid[1:len(lineid) - 1] for lineid in convo]
             
+            #Our convo is of the format [L1, L2, L3...]
+            
             # ref: https://stackoverflow.com/questions/4071396/how-to-split-by-comma-and-strip-white-spaces-in-python
             convo_lines = [self.movie_lines[lineid]["prepped_text"] for lineid in convo]
             movie_convo_lines.append(convo_lines)
-            
-            if i==5000: break
         
         # We must now iterate through each conversation and create pairs of exchanges.
         print("Creating exchange pairs")
@@ -179,7 +206,10 @@ class CornellMovieCorpus(Corpus):
         for convo in movie_convo_lines:
             # Each convo is a list of length > 2
             for i in range(len(convo) - 1):
-                movie_exchange_pairs.append((convo[i], convo[i + 1]))
+                movie_exchange_pairs.append({"Q":{"tokens":convo[i], "indices":self.vocabulary.wordsToIndex(convo[i])}, 
+                                             "A":{"tokens":convo[i+1], "indices":self.vocabulary.wordsToIndex(convo[i+1])},
+                                            }
+                                            )
 
         return movie_exchange_pairs
             

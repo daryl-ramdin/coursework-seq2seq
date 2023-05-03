@@ -36,8 +36,8 @@ class Decoder(nn.Module):
 
     def forward(self, input_tensor, hidden_tensor):
         output_tensor = self.embedding(input_tensor).view(1, 1, -1)
-        output_tensor = F.relu(output_tensor)
         output_tensor, hidden_tensor = self.gru(output_tensor, hidden_tensor)
+        output_tensor = F.relu(output_tensor)
         output_tensor = self.out(output_tensor[0])
         output_tensor = self.softmax(output_tensor)
         return output_tensor, hidden_tensor
