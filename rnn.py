@@ -33,7 +33,7 @@ class Decoder(nn.Module):
         self.gru = nn.GRU(input_size=self.sizeof_embedding, hidden_size=self.sizeof_embedding, batch_first=True)
         self.out = nn.Linear(self.sizeof_embedding,128)
         self.out2 = nn.Linear(128, self.sizeof_vocab)
-        self.softmax = nn.Softmax()
+        self.softmax = nn.LogSoftmax(dim=2)
 
     def forward(self, input_tensor, hidden_tensor):
         output_tensor = self.embedding(input_tensor)
@@ -41,4 +41,5 @@ class Decoder(nn.Module):
         output_tensor = self.out(output_tensor)
         output_tensor = self.relu(output_tensor)
         output_tensor = self.out2(output_tensor)
+        output_tensor = self.softmax(output_tensor)
         return output_tensor, hidden_tensor
