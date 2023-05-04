@@ -9,13 +9,14 @@
 import os
 import numpy as np
 import torch
-from corpus import CornellMovieCorpus, Vocabulary
+from corpus import Corpus, CornellMovieCorpus, Vocabulary
 from rnn import Encoder, Decoder
 from torch import optim
 import torch.nn as nn
 from matplotlib import pyplot as plt
 from datetime import datetime
 import random
+from torch.utils.data import DataLoader as DataLoader
 
 
 # <h2>Use the GPU if present</h2>
@@ -44,7 +45,6 @@ corpus = CornellMovieCorpus()
 
 # In[4]:
 
-
 lines = list(corpus.movie_lines.items())
 print(len(lines), "movie lines loaded")
 
@@ -53,15 +53,14 @@ print(len(set(distinct_lines)), "distinct movie lines exist")
 
 print(len(corpus.movie_convos), "conversations loaded")
 
-
-print("\nExchanges\n")
-print(len(corpus.exchange_pairs), "exchanges created")
-
-for i in range(5):
-    print("\n",corpus.exchange_pairs[i])
-
-distinct_exchange_pairs = [pair["Q"]["tokens"] + " " + pair["A"]["tokens"] for pair in corpus.exchange_pairs]
-print(len(set(distinct_exchange_pairs)), "distinct exchanges exist")                           
+# print("\nExchanges\n")
+# print(len(corpus.exchange_pairs), "exchanges created")
+#
+# for i in range(5):
+#     print("\n",corpus.exchange_pairs[i])
+#
+# distinct_exchange_pairs = [pair["Q"]["tokens"] + " " + pair["A"]["tokens"] for pair in corpus.exchange_pairs]
+# print(len(set(distinct_exchange_pairs)), "distinct exchanges exist")
 
 
 # <h2>Create the vocabulary</h2>
@@ -70,7 +69,7 @@ print(len(set(distinct_exchange_pairs)), "distinct exchanges exist")
 
 
 #Let's get a batch of exchanges
-pairs, batch = corpus.getBatchExchangeTensors(1)
+# pairs, batch = corpus.getBatchExchangeTensors(1)
 
 # for i in range(len(pairs)):
 #     print(pairs[i]["Q"],"\n")
@@ -102,12 +101,14 @@ batch_size = 1
 teacher_forcing = 0
 teacher_forcing_decay = 0
 
-# encoder_optimizer = optim.Adam(encoder.parameters(),lr=1e-03)
-# decoder_optimizer = optim.Adam(decoder.parameters(),lr=1e-03)
+encoder_optimizer = optim.Adam(encoder.parameters(),lr=1e-03)
+decoder_optimizer = optim.Adam(decoder.parameters(),lr=1e-03)
 
-optimizer = torch.optim.Adam(list(encoder.parameters()) + list(decoder.parameters()), lr=1e-03, weight_decay=1e-03)
+coder_optimizer = torch.optim.Adam(list(encoder.parameters()) + list(decoder.parameters()), lr=1e-03, weight_decay=1e-03)
 
 criterion = nn.CrossEntropyLoss()
+
+dataloader = DataLoader(corpus,batch_size=1,shuffle=True)
 
 #Let's get a random exchange pair
 epoch_loss = 0
@@ -122,23 +123,25 @@ for epoch in range(number_of_epochs):
     processed_total_batches = 0
     batch_count = 0
 
-    for i in range(75000):
+    for idx, batch in enumerate(dataloader):
 
         if not current_batch:
            total_phrase_pairs = 0
            loss_batch = 0
-        optimizer.zero_grad()
+        encoder_optimizer.zero_grad()
+        decoder_optimizer.zero_grad()
+        # coder_optimizer.zero_grad()
         current_batch += 1
 
-        pairs, batch = corpus.getBatchExchangeTensors(batch_size)
+        Q_tensors = batch[1]["Q"] #shape(batch_size,convo_length,max_seq_len)
+        A_tensors= batch[1]["Q"] #shape(batch_size,convo_length,max_seq_len)
 
-        Q_tensors = batch[0] #shape(batch_size,max_seq_len)
-        A_tensors= batch[1] #shape(batch_size,max_seq_len)
+        Q_tensors = Q_tensors.squeeze(0)
+        A_tensors = A_tensors.squeeze(0)
+
+        if len(Q_tensors)== 3:
+            continue
         #print("Tensor shapes", Q_tensors.shape, A_tensors.shape)
-
-        # encoder_optimizer.zero_grad()
-        # decoder_optimizer.zero_grad()
-        #optimizer.zero_grad()
 
         #input_tensor, target_tensor = corpus.pairToTensor(exchange_pair)
         #print("Input tensor shape", input_tensor.shape, "target", target_tensor.shape)
@@ -195,7 +198,9 @@ for epoch in range(number_of_epochs):
             processed_total_batches += 1
             print('Loss={0:.6f}, total phrase pairs in the batch = {1:d}'.format(loss_batch, total_phrase_pairs))
             loss_batch.backward()
-            optimizer.step()
+            encoder_optimizer.step()
+            decoder_optimizer.step()
+            # coder_optimizer.step()
 
     epoch_loss = epoch_loss / (processed_total_batches + 1)
     print('Loss={0:.6f}, total phrase pairs in the batch = {1:d}, total batches processed = {2:d}'.format(epoch_loss,
