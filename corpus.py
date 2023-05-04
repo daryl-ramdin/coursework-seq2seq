@@ -50,6 +50,9 @@ class Vocabulary:
 class Corpus(Dataset):
     FULL = 1
     PAIRS = 2
+
+    def collate_convos(batch):
+        return batch
     def __init__(self, max_seq_length=10, convo_mode=FULL):
         super(Corpus, self).__init__()
         self.max_seq_length = max_seq_length
@@ -90,12 +93,6 @@ class Corpus(Dataset):
         A_tensors = torch.stack(A_tensors)
         return {"conversation":conversation, "Q":Q_tensors, "A":A_tensors}
 
-    # def get_exchange_pairs(self):
-    #     return self.exchange_pairs
-
-    # def get_vocabulary(self):
-    #     return self.vocabulary
-
     def data_prep(self, sentence):
         # remove non-alphanumeric
         # ref INM706 Lab 5
@@ -107,53 +104,6 @@ class Corpus(Dataset):
 
     def get_random_conversation(self):
         return random.choice(self.conversations)
-
-    #
-    # def get_conversation_chain(self,idx):
-    #     #This function goes through the conversations
-    #     #and creates a conversation chain of links.
-    #     #each link is a pair of exchanges between two people
-    #     batch = []
-    #     Q_tensors = []
-    #     A_tensors = []
-    #
-    #     #Get the conversation
-    #     convo = self.conversations[idx]
-    #
-    #
-    #     #Convert each pair to a tensor of its token indices
-    #     for link in list_of_convo_pairs:
-    #         for pair in convopair:
-    #             q,a = self.pairToTensor(pair)
-    #             Q_tensors.append(q)
-    #             A_tensors.append(a)
-    #
-    #     #ref INM706 Lab 5
-    #     Q_tensors = torch.stack(Q_tensors)
-    #     A_tensors = torch.stack(A_tensors)
-    #     return list_of_convo_pairs, (Q_tensors,A_tensors)
-    #
-    # def getBatchExchangeTensors(self, batch_size=1):
-    #     batch = []
-    #     Q_tensors = []
-    #     A_tensors = []
-    #
-    #     # Get the batch of pairs
-    #     list_of_convo_pairs = random.choices(self.convo_pairs, k=batch_size)
-    #     # list_of_convo_pairs = [self.convo_pairs[66061]]
-    #     # A pair is a dictionary: { "Q":{"tokens":str,"indices":[]}, "A":{"tokens":str,"indices":[]} }
-    #
-    #     # Convert each pair to a tensor of its token indices
-    #     for convopair in list_of_convo_pairs:
-    #         for pair in convopair:
-    #             q, a = self.pairToTensor(pair)
-    #             Q_tensors.append(q)
-    #             A_tensors.append(a)
-    #
-    #     # ref INM706 Lab 5
-    #     Q_tensors = torch.stack(Q_tensors)
-    #     A_tensors = torch.stack(A_tensors)
-    #     return list_of_convo_pairs, (Q_tensors, A_tensors)
 
     def pairToTensor(self, pair):
         # First convert the pair to list of indices
@@ -242,46 +192,6 @@ class CornellMovieCorpus(Corpus):
                 movie_lines[line_items[0]] = {"original_text": sentence, "prepped_text": self.data_prep(sentence)}
 
         return movie_lines
-
-    # def create_exchange_pairs(self):
-    #     # We need to convert our conversations to text.
-    #     # ref: INM706 Lab 5
-    #     print("Converting conversation line numbers to text...")
-    #     movie_convo_lines = []
-    #     for i, convo in enumerate(self.movie_convos):
-    #         # Get the conversation
-    #         convo = convo[-1]
-    #
-    #         # Remove the square brackets and get each line id
-    #         convo = convo[1:len(convo) - 1].split(",")
-    #
-    #         # Line ids have spaces so remove
-    #         convo = [lineid.strip() for lineid in convo]
-    #
-    #         # The'yre also encapsualted in quotes so remove them
-    #         convo = [lineid[1:len(lineid) - 1] for lineid in convo]
-    #
-    #         #Our convo is of the format [L1, L2, L3...]
-    #
-    #         # ref: https://stackoverflow.com/questions/4071396/how-to-split-by-comma-and-strip-white-spaces-in-python
-    #         convo_lines = [self.movie_lines[lineid]["prepped_text"] for lineid in convo]
-    #         movie_convo_lines.append(convo_lines)
-    #
-    #     # We must now iterate through each conversation and create pairs of exchanges.
-    #     print("Creating exchange pairs")
-    #     movie_exchange_pairs = []
-    #     movie_convo_pairs = []
-    #     for convo in movie_convo_lines:
-    #         # Each convo is a list of length > 2
-    #         convo_pairs = []
-    #         for i in range(len(convo) - 1):
-    #             q = {"tokens":convo[i], "indices":self.vocabulary.wordsToIndex(convo[i])}
-    #             a = {"tokens":convo[i+1], "indices":self.vocabulary.wordsToIndex(convo[i+1])}
-    #             movie_exchange_pairs.append({"Q":q, "A":a})
-    #             convo_pairs.append({"Q":q, "A":a})
-    #         movie_convo_pairs.append(convo_pairs)
-    #
-    #     return movie_exchange_pairs, movie_convo_pairs
 
     def convolines2text(self):
         # ref: INM706 Lab 5
