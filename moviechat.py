@@ -35,7 +35,7 @@ print(device)
 # In[3]:
 
 
-random.seed(45)
+random.seed(77)
 
 corpus = CornellMovieCorpus()
 
@@ -70,13 +70,13 @@ print(len(set(distinct_exchange_pairs)), "distinct exchanges exist")
 
 
 #Let's get a batch of exchanges
-pairs, batch = corpus.getBatchExchangeTensors(5)
+pairs, batch = corpus.getBatchExchangeTensors(1)
 
-for i in range(len(pairs)):
-    print(pairs[i]["Q"],"\n")
-    print(batch[0][i],"\n")
-    print(pairs[i]["A"],"\n")
-    print(batch[1][i],"\n")
+# for i in range(len(pairs)):
+#     print(pairs[i]["Q"],"\n")
+#     print(batch[0][i],"\n")
+#     print(pairs[i]["A"],"\n")
+#     print(batch[1][i],"\n")
 
 
 # <h2>Create Encoders and Decoders</h2>
@@ -96,80 +96,112 @@ decoder = Decoder(sizeof_embedding, sizeof_vocab)
 # In[7]:
 
 
-number_of_epochs = 75000
+number_of_epochs = 5000
 print_interval = 10
-batch_size = 10
+batch_size = 1
 teacher_forcing = 0
 teacher_forcing_decay = 0
 
-encoder_optimizer = optim.Adam(encoder.parameters(),lr=1e-03)
-decoder_optimizer = optim.Adam(decoder.parameters(),lr=1e-03)
+# encoder_optimizer = optim.Adam(encoder.parameters(),lr=1e-03)
+# decoder_optimizer = optim.Adam(decoder.parameters(),lr=1e-03)
 
-criterion = nn.NLLLoss()
+optimizer = torch.optim.Adam(list(encoder.parameters()) + list(decoder.parameters()), lr=1e-03, weight_decay=1e-03)
+
+criterion = nn.CrossEntropyLoss()
 
 #Let's get a random exchange pair
-epoch_loss = []
+epoch_loss = 0
 start_time = datetime.now()
+process_before_update = 100
+current_batch = 0
+total_phrase_pairs = 0
+loss_batch = 0
+total_epoch_loss = []
 for epoch in range(number_of_epochs):
-    
-    pairs, batch = corpus.getBatchExchangeTensors(5)
-    
-    Q_tensors = batch[0]
-    A_tensors= batch[1]
-    print("Tensor shapes", Q_tensors.shape, A_tensors.shape)
+    epoch_loss = 0
+    processed_total_batches = 0
+    batch_count = 0
 
-    encoder_optimizer.zero_grad()
-    decoder_optimizer.zero_grad()
-    
-    #input_tensor, target_tensor = corpus.pairToTensor(exchange_pair)
-    #print("Input tensor shape", input_tensor.shape, "target", target_tensor.shape)
+    for i in range(75000):
 
-    #Try this on the encoder
-    #We need to initialise the hidden state
-    hidden = torch.zeros(1,corpus.max_seq_length,encoder.sizeof_embedding)
+        if not current_batch:
+           total_phrase_pairs = 0
+           loss_batch = 0
+        optimizer.zero_grad()
+        current_batch += 1
 
-    encoder_output = []
+        pairs, batch = corpus.getBatchExchangeTensors(batch_size)
 
-    #Encode each word in the input tensor one word a time
-    for input_tensor in Q_tensors:
-        output, hidden = encoder(input_tensor,hidden)
-        #We also keep an array of the outputs
-        encoder_output.append(output)
+        Q_tensors = batch[0] #shape(batch_size,max_seq_len)
+        A_tensors= batch[1] #shape(batch_size,max_seq_len)
+        #print("Tensor shapes", Q_tensors.shape, A_tensors.shape)
 
-    # #The decoder accepts an input and the previous hidden start
-    # #At the start, the first input is the SOS token and the 
-    # #previous hidden state is the output of the encoder i.e. context vector
+        # encoder_optimizer.zero_grad()
+        # decoder_optimizer.zero_grad()
+        #optimizer.zero_grad()
 
-    int_t = torch.tensor(Vocabulary.SOS_index,dtype=torch.int64)
-    
-    hidden = encoder_output[len(encoder_output)-1]
+        #input_tensor, target_tensor = corpus.pairToTensor(exchange_pair)
+        #print("Input tensor shape", input_tensor.shape, "target", target_tensor.shape)
 
-    loss = 0
-    
+        #Encode the batch
+        output, hidden = encoder(Q_tensors)# output:(batch_size, max_seq_len, hidden_size), hidden: (1, batch_size, hidden_size)
 
-    # print("Target Tensor", target_tensor.shape)
+        # #The decoder accepts an input and the previous hidden start
+        # At the start, the first input is the SOS token and the
+        # hidden state is the output of the encoder i.e. context vector
 
-    decoder_output = []
-    
-    for i in range(len(target_tensor)):
-        if random.random() < teacher_forcing: int_t = target_tensor[i]
-        
-        output, hidden = decoder(int_t,hidden)
-        #print("Output", output.shape, "Target", target_tensor[i].shape)
-        loss += criterion(output,target_tensor[i])
-        int_t = torch.argmax(output,dim=1)
-            
-    if epoch%print_interval == 0: 
-        end_time = datetime.now()
-        timediff = end_time - start_time
-        print("Epoch", epoch, "Loss", loss.item()/len(target_tensor), "teacher_forcing", teacher_forcing, "in",timediff.seconds, "seconds") 
-        start_time = datetime.now()
-        
-    epoch_loss.append([epoch,loss.item()/len(target_tensor)])
-    loss.backward()
-    encoder_optimizer.step()
-    decoder_optimizer.step()
-    
+        #The first input of the decode is the SOS token.
+        #Iterate through the batch of A_tensors and get the first element in each sequence
+        decoder_input = A_tensors[:, 0].view(-1,1) #decoder_input (batch_size, 1)
+
+        #The initial hidden input is the output of the encoder.
+        #For each sequence in the encoder output batch, get the last token
+        decoder_hidden = output[:,-1:,:].squeeze(1) #decoder_hidden  (batch_size ,sizeof_hidden)
+
+        #Get the output from the decoder.
+        #decoder_input (batch_size,1), decoder_hidden (1, batch_size, sizeof_hidden)
+        decoder_hidden = decoder_hidden.unsqueeze(0)
+        output, hidden = decoder(decoder_input,decoder_hidden) #output (batch_size, 1, sizeof_vocab), hidden (batch_size, sizeof_hidden)
+        output = output.squeeze(1)
+        #calculate the loss by comparing with the tensor of the first non-sos token
+        loss = criterion(output,A_tensors[:,1])
+        loss_dialogue = 0
+        loss_dialogue += loss
+
+        #Get the top prediction indices
+        output = output.topk(k=1, dim=1).indices
+        #  For each batch, we now iterate through the rest of the sequence
+        # in each A_tensor decoding outputs and hidden states
+        for i in range(1,corpus.max_seq_length+1):
+
+            #Get the decoder output and hidden state for the
+            output, hidden = decoder(output, hidden)
+
+            output = output.squeeze(1)
+            # calculate the loss by comparing with the tensor of the first non-sos token
+            target = A_tensors[:, i+1]
+            loss = criterion(output, target)
+            loss_dialogue += loss
+
+            #Get the top prediction
+            output = output.topk(k=1, dim=1).indices
+        loss_dialogue = loss_dialogue/12
+        loss_batch +=loss_dialogue
+
+        if not current_batch % process_before_update:
+            current_batch = 0
+            loss_batch = loss_batch / process_before_update
+            epoch_loss += loss_batch.item()
+            processed_total_batches += 1
+            print('Loss={0:.6f}, total phrase pairs in the batch = {1:d}'.format(loss_batch, total_phrase_pairs))
+            loss_batch.backward()
+            optimizer.step()
+
+    epoch_loss = epoch_loss / (processed_total_batches + 1)
+    print('Loss={0:.6f}, total phrase pairs in the batch = {1:d}, total batches processed = {2:d}'.format(epoch_loss,
+                                                                                                          total_phrase_pairs,
+                                                                                                          processed_total_batches))
+
     teacher_forcing = max(0,teacher_forcing - (teacher_forcing_decay * teacher_forcing)) #return 0 if negative
 
 
@@ -177,7 +209,7 @@ for epoch in range(number_of_epochs):
 
 
 epoch_losses = np.array(epoch_loss)
-plt.plot(epoch_losses[:,0][::500], epoch_losses[:,1][::500])
+plt.plot(epoch_losses[:,0][::1], epoch_losses[:,1][::1])
 plt.show()
 
 

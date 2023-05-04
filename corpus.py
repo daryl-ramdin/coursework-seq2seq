@@ -3,6 +3,7 @@ import re
 import nltk
 import random
 import torch
+from torch.utils import data
 
 class Vocabulary:
     PAD = "<pad>"
@@ -46,11 +47,28 @@ class Vocabulary:
             indicesList.append(self.vocabulary[word]["index"])
         return indicesList
 
-class Corpus:
-    def __init__(self,max_seq_length=10,):
+class Corpus(data.dataset):
+
+    def __init__(self,max_seq_length=10, convo_mode=True):
+        super(Corpus, self).__init__()
         self.max_seq_length = max_seq_length
         self.exchange_pairs = []
+        self.convo_pairs = []
         self.vocabulary = Vocabulary()
+        self.convo_item = convo_mode
+
+    def __len__(self):
+        len = 0
+        if self.convo_item:
+            #Return the number of conversations
+            len = len(self.convo_pairs)
+        else:
+            #Return the number of exchange pairs
+            len = len(self.exchange_pairs)
+        return len
+
+    def __getitem__(self, item):
+        return
 
     def get_exchange_pairs(self):
         return self.exchange_pairs
@@ -70,26 +88,50 @@ class Corpus:
     def get_random_exchange(self):
         return random.choice(self.exchange_pairs)
     
-    def getBatchExchangeTensors(self,batch_size=1):
+    def get_convo(self):
         batch = []
         Q_tensors = []
         A_tensors = []
         
         #Get the batch of pairs
-        pairs = random.choices(self.exchange_pairs, k=batch_size)
-        
+        list_of_convo_pairs = random.choices(self.convo_pairs,k=1)
+
+        # list_of_convo_pairs = [self.convo_pairs[66061]]
         #A pair is a dictionary: { "Q":{"tokens":str,"indices":[]}, "A":{"tokens":str,"indices":[]} }
 
         #Convert each pair to a tensor of its token indices
-        for pair in pairs:
-            q,a = self.pairToTensor(pair)
-            Q_tensors.append(q)
-            A_tensors.append(a)
+        for convopair in list_of_convo_pairs:
+            for pair in convopair:
+                q,a = self.pairToTensor(pair)
+                Q_tensors.append(q)
+                A_tensors.append(a)
 
         #ref INM706 Lab 5
         Q_tensors = torch.stack(Q_tensors)
         A_tensors = torch.stack(A_tensors)
-        return pairs, (Q_tensors,A_tensors)
+        return list_of_convo_pairs, (Q_tensors,A_tensors)
+
+    def getBatchExchangeTensors(self, batch_size=1):
+        batch = []
+        Q_tensors = []
+        A_tensors = []
+
+        # Get the batch of pairs
+        list_of_convo_pairs = random.choices(self.convo_pairs, k=batch_size)
+        # list_of_convo_pairs = [self.convo_pairs[66061]]
+        # A pair is a dictionary: { "Q":{"tokens":str,"indices":[]}, "A":{"tokens":str,"indices":[]} }
+
+        # Convert each pair to a tensor of its token indices
+        for convopair in list_of_convo_pairs:
+            for pair in convopair:
+                q, a = self.pairToTensor(pair)
+                Q_tensors.append(q)
+                A_tensors.append(a)
+
+        # ref INM706 Lab 5
+        Q_tensors = torch.stack(Q_tensors)
+        A_tensors = torch.stack(A_tensors)
+        return list_of_convo_pairs, (Q_tensors, A_tensors)
 
     
     def pairToTensor(self,pair):
@@ -145,7 +187,7 @@ class CornellMovieCorpus(Corpus):
         self.create_vocabulary()
 
         #get the pairs of conversation exchanges
-        self.exchange_pairs = self.create_exchange_pairs()
+        self.exchange_pairs, self.convo_pairs = self.create_exchange_pairs()
     
     def create_vocabulary(self):
         #Iterate through the list of movie lines and update the words in the vocabulary
@@ -203,15 +245,18 @@ class CornellMovieCorpus(Corpus):
         # We must now iterate through each conversation and create pairs of exchanges.
         print("Creating exchange pairs")
         movie_exchange_pairs = []
+        movie_convo_pairs = []
         for convo in movie_convo_lines:
             # Each convo is a list of length > 2
+            convo_pairs = []
             for i in range(len(convo) - 1):
-                movie_exchange_pairs.append({"Q":{"tokens":convo[i], "indices":self.vocabulary.wordsToIndex(convo[i])}, 
-                                             "A":{"tokens":convo[i+1], "indices":self.vocabulary.wordsToIndex(convo[i+1])},
-                                            }
-                                            )
+                q = {"tokens":convo[i], "indices":self.vocabulary.wordsToIndex(convo[i])}
+                a = {"tokens":convo[i+1], "indices":self.vocabulary.wordsToIndex(convo[i+1])}
+                movie_exchange_pairs.append({"Q":q, "A":a})
+                convo_pairs.append({"Q":q, "A":a})
+            movie_convo_pairs.append(convo_pairs)
 
-        return movie_exchange_pairs
+        return movie_exchange_pairs, movie_convo_pairs
             
     def load_movie_conversations(self):
         # Let's load the conversations.
