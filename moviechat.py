@@ -10,7 +10,7 @@ import os
 import numpy as np
 import torch
 from corpus import Corpus, CornellMovieCorpus, Vocabulary
-from rnn import Encoder, Decoder
+from rnn import GRUEncoder, GRUDecoder
 from torch import optim
 import torch.nn as nn
 from matplotlib import pyplot as plt
@@ -25,12 +25,12 @@ from torch.utils.data import DataLoader as DataLoader
 
 
 random.seed(77)
-SIZEOF_EMBEDDING = 256
+SIZEOF_EMBEDDING = 128
 NUMBER_OF_EPOCHS = 1
 PRINT_INTERVAL = 10
 BATCH_SIZE = 1
 TEACHER_FORCING = 0
-TEACHER_FORCING_DECAY = 0
+TEACHER_FORCING_DECAY = 1e-10
 PROGRESS_INTERVAL = 100
 LEARNING_RATE = 1e-03
 CONVO_MODE = Corpus.FULL
@@ -41,7 +41,7 @@ CONVO_MODE = Corpus.FULL
 # In[3]:
 
 
-device = torch.device('cpu')
+device = torch.device('mps')
 if (torch.cuda.is_available()):
    device = torch.device('cuda')
 print(device)
@@ -76,11 +76,11 @@ print(len(corpus.movie_convos), "conversations loaded")
 
 sizeof_vocab = corpus.vocabulary.len
 
-encoder = Encoder(sizeof_vocab, SIZEOF_EMBEDDING)
-decoder = Decoder(SIZEOF_EMBEDDING, sizeof_vocab)
+encoder = GRUEncoder(sizeof_vocab, SIZEOF_EMBEDDING)
+decoder = GRUDecoder(SIZEOF_EMBEDDING, sizeof_vocab)
 
-encoder.to(device)
-decoder.to(device)
+# encoder.to(device)
+# decoder.to(device)
 
 
 # <h2>Let's setup our trainer</h2>
@@ -130,8 +130,8 @@ for epoch in range(NUMBER_OF_EPOCHS):
         Q_tensors = batch[1]["Q"] #shape(batch_size,convo_length,seq_len)
         A_tensors= batch[1]["Q"] #shape(batch_size,convo_length,seq_len)
         
-        Q_tensors.to(device)
-        A_tensors.to(device)
+        # Q_tensors.to(device)
+        # A_tensors.to(device)
 
         Q_tensors = Q_tensors.squeeze(0)
         A_tensors = A_tensors.squeeze(0)
@@ -182,7 +182,7 @@ for epoch in range(NUMBER_OF_EPOCHS):
         for i in range(seq_length-1):
             
             #if teacher forcing then the target is fed in as the input
-            if teacher_forcing: decoder_input = A_tensor[:,i+1]
+            if teacher_forcing: decoder_input = A_tensors[:,i+1].view(-1,1)
             
             #Get the decoder output and hidden state for the
             decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden) #decoder_output (batch_size, 1, sizeof_vocab), decoder_hidden (batch_size, sizeof_hidden)
@@ -198,6 +198,8 @@ for epoch in range(NUMBER_OF_EPOCHS):
         convo_loss = loss/corpus.max_seq_length
         interval_loss += convo_loss
 
+        
+        TEACHER_FORCING = max(0,TEACHER_FORCING - (TEACHER_FORCING*TEACHER_FORCING_DECAY))
 
         if batch_counter%PROGRESS_INTERVAL == 0 and batch_counter:
             #Calculate the average sequence loss over the interval
