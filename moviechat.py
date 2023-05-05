@@ -41,7 +41,7 @@ CONVO_MODE = Corpus.FULL
 # In[3]:
 
 
-device = torch.device('mps')
+device = torch.device('cpu')
 if (torch.cuda.is_available()):
    device = torch.device('cuda')
 print(device)
@@ -79,8 +79,8 @@ sizeof_vocab = corpus.vocabulary.len
 encoder = GRUEncoder(sizeof_vocab, SIZEOF_EMBEDDING)
 decoder = GRUDecoder(SIZEOF_EMBEDDING, sizeof_vocab)
 
-# encoder.to(device)
-# decoder.to(device)
+encoder.to(device)
+decoder.to(device)
 
 
 # <h2>Let's setup our trainer</h2>
@@ -125,17 +125,18 @@ for epoch in range(NUMBER_OF_EPOCHS):
         
         encoder_optimizer.zero_grad()
         decoder_optimizer.zero_grad()
-        # coder_optimizer.zero_grad()
+
 
         Q_tensors = batch[1]["Q"] #shape(batch_size,convo_length,seq_len)
         A_tensors= batch[1]["Q"] #shape(batch_size,convo_length,seq_len)
         
-        # Q_tensors.to(device)
-        # A_tensors.to(device)
+        Q_tensors.to(device)
+        A_tensors.to(device)
 
         Q_tensors = Q_tensors.squeeze(0)
         A_tensors = A_tensors.squeeze(0)
-        
+
+        convo_length = A_tensors.shape[0]
         seq_length= A_tensors.shape[1]
 
         interval_sequences+=len(A_tensors)
@@ -144,7 +145,8 @@ for epoch in range(NUMBER_OF_EPOCHS):
         #print("Tensor shapes", Q_tensors.shape, A_tensors.shape)
 
         #Encode the batch
-        encoder_output, encoder_hidden = encoder(Q_tensors) # encoder_output: (batch_size, max_seq_len, hidden_size), encoder_hidden: (1, batch_size, hidden_size)
+        encoder_hidden = torch.zeros(1,convo_length,SIZEOF_EMBEDDING,device=device)
+        encoder_output, encoder_hidden = encoder(Q_tensors,encoder_hidden) # encoder_output: (batch_size, max_seq_len, hidden_size), encoder_hidden: (1, batch_size, hidden_size)
 
         # #The decoder accepts an input and the previous hidden start
         # At the start, the first input is the SOS token and the
@@ -222,20 +224,10 @@ for epoch in range(NUMBER_OF_EPOCHS):
 
 # In[ ]:
 
-
+np.savetcxt("exp1",training_loss,delimiter=",")
 training_loss = np.array(training_loss)
 plt.plot(training_loss[:,0][::1], training_loss[:,1][::1])
 plt.show()
-
-
-# In[ ]:
-
-
-import random
-print(random.random())
-
-
-# In[ ]:
 
 
 
