@@ -17,6 +17,7 @@ from matplotlib import pyplot as plt
 from datetime import datetime
 import random
 from torch.utils.data import DataLoader as DataLoader
+from metrics import show_loss
 
 
 # <h2>Parameter Settings</h2>
@@ -25,6 +26,7 @@ from torch.utils.data import DataLoader as DataLoader
 
 
 random.seed(77)
+EXPERIMENT_NAME = "testing"
 SIZEOF_EMBEDDING = 128
 NUMBER_OF_EPOCHS = 1
 PRINT_INTERVAL = 10
@@ -161,21 +163,6 @@ for epoch in range(NUMBER_OF_EPOCHS):
         # decoder_hidden = encoder_output[:,-1:,:].squeeze(1) 
         # decoder_hidden = decoder_hidden.unsqueeze(0) #decoder_hidden  (1, batch_size, sizeof_hidden)
         decoder_hidden = encoder_hidden
-            
-#         #Get the output from the decoder.
-#         #decoder_input (batch_size,1), decoder_hidden (1, batch_size, sizeof_hidden)
-#         decoder_output, decoder_hidden = decoder(decoder_input,decoder_hidden) #decoder_output (batch_size, 1, sizeof_vocab), decoder_hidden (batch_size, sizeof_hidden)
-#         decoder_output = decoer_output.squeeze(1)
-        
-#         #calculate the loss by comparing with the ouput with the first non-SOS token in the A tensor
-#         target = A_tensors[:,1]
-#         loss = criterion(decoder_output,target)
-
-#         #Get the top prediction indices
-#         decoder_output = decoder_output.topk(k=1, dim=1).indices
-        
-#         #  For each batch, we now iterate through the rest of the sequence
-#         # in each A_tensor decoding outputs and hidden states
         
         loss = 0
         #If we are using teach forcing then the decoder_hidden is the 
@@ -218,16 +205,16 @@ for epoch in range(NUMBER_OF_EPOCHS):
 
         batch_counter+=1
         training_loss.append([batch_counter,convo_loss.item()])
+        if batch_counter> 200: break
 
 
 # <h2>Print the results</h2>
 
 # In[ ]:
 
-np.savetcxt("exp1",training_loss,delimiter=",")
-training_loss = np.array(training_loss)
-plt.plot(training_loss[:,0][::1], training_loss[:,1][::1])
-plt.show()
+data_file = EXPERIMENT_NAME + ".csv"
+np.savetxt(data_file,training_loss,delimiter=",")
+show_loss(data_file,100)
 
 
 
