@@ -10,7 +10,7 @@ import os
 import numpy as np
 import torch
 from corpus import Corpus, CornellMovieCorpus, Vocabulary
-from rnn import GRUEncoder, GRUDecoder
+from rnn import GRUEncoder, GRUDecoder, AttentionDecoder
 from torch import optim
 import torch.nn as nn
 from matplotlib import pyplot as plt
@@ -18,6 +18,7 @@ from datetime import datetime
 import random
 from torch.utils.data import DataLoader as DataLoader
 from metrics import show_loss
+from utils import  evaluate
 
 
 # <h2>Parameter Settings</h2>
@@ -26,7 +27,7 @@ from metrics import show_loss
 
 
 random.seed(77)
-EXPERIMENT_NAME = "testing"
+EXPERIMENT_NAME = "exp4"
 SIZEOF_EMBEDDING = 128
 NUMBER_OF_EPOCHS = 1
 PRINT_INTERVAL = 10
@@ -34,6 +35,7 @@ BATCH_SIZE = 1
 TEACHER_FORCING = 0
 TEACHER_FORCING_DECAY = 1e-10
 PROGRESS_INTERVAL = 100
+EVAL_INTERVAL = 1000
 LEARNING_RATE = 1e-03
 CONVO_MODE = Corpus.FULL
 
@@ -147,8 +149,12 @@ for epoch in range(NUMBER_OF_EPOCHS):
         #print("Tensor shapes", Q_tensors.shape, A_tensors.shape)
 
         #Encode the batch
-        encoder_hidden = torch.zeros(1,convo_length,SIZEOF_EMBEDDING,device=device)
-        encoder_output, encoder_hidden = encoder(Q_tensors,encoder_hidden) # encoder_output: (batch_size, max_seq_len, hidden_size), encoder_hidden: (1, batch_size, hidden_size)
+        #encoder_hidden = torch.zeros(1,convo_length,SIZEOF_EMBEDDING,device=device)
+        encoder_output, encoder_hidden = encoder(Q_tensors) # encoder_output: (batch_size, max_seq_len, hidden_size), encoder_hidden: (1, batch_size, hidden_size)
+        # encoder_outputs = torch.zeros(convo_length,seq_length,SIZEOF_EMBEDDING)
+        # for i in range(seq_length):
+        #     encoder_output, encoder_hidden = encoder(Q_tensors[:, i])
+        #     encoder_outputs[:, i, :] = encoder_output[:, 0, :]
 
         # #The decoder accepts an input and the previous hidden start
         # At the start, the first input is the SOS token and the
@@ -186,6 +192,9 @@ for epoch in range(NUMBER_OF_EPOCHS):
 
         convo_loss = loss/corpus.max_seq_length
         interval_loss += convo_loss
+        loss.backward()
+        encoder_optimizer.step()
+        decoder_optimizer.step()
 
         
         TEACHER_FORCING = max(0,TEACHER_FORCING - (TEACHER_FORCING*TEACHER_FORCING_DECAY))
@@ -197,16 +206,14 @@ for epoch in range(NUMBER_OF_EPOCHS):
             timediff = timediff.seconds
             print(batch_type + ' Number: {0:1d}, Number of sequences: {1:1d}, Average sequence loss {2:.6f}, in {3:d} seconds'.format(batch_counter,interval_sequences,interval_loss/PROGRESS_INTERVAL,timediff))
             start_time = datetime.now()
-            interval_loss.backward()
-            encoder_optimizer.step()
-            decoder_optimizer.step()
             interval_loss = 0
             interval_sequences = 0
 
+        if batch_counter%EVAL_INTERVAL == 0:
+            evaluate("What is your favourite food?",encoder,decoder,corpus)
+
         batch_counter+=1
         training_loss.append([batch_counter,convo_loss.item()])
-        if batch_counter> 200: break
-
 
 # <h2>Print the results</h2>
 
@@ -216,6 +223,7 @@ data_file = EXPERIMENT_NAME + ".csv"
 np.savetxt(data_file,training_loss,delimiter=",")
 show_loss(data_file,100)
 
-
+torch.save(encoder.state_dict(), EXPERIMENT_NAME + "_encoder.dict")
+torch.save(decoder.state_dict(), EXPERIMENT_NAME + "_decoder.dict")
 
 

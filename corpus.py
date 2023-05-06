@@ -64,7 +64,6 @@ class Corpus(Dataset):
         return len(self.conversations)
 
     def __getitem__(self, item):
-        #item = 66061
         return item, self.get_conversation(item)
 
     def get_conversation(self, index):
@@ -141,6 +140,36 @@ class Corpus(Dataset):
         word_tensor = torch.tensor(self.vocabulary.wordsToIndex(word), dtype=torch.int64).view(-1, 1)
         return word_tensor
 
+    def sentenceToTensor(self,sentence):
+        #Prep the sentence
+        sentence = self.data_prep(sentence)
+
+        #Get the list of indices
+        indices = self.vocabulary.wordsToIndex(sentence)
+
+        # We then standardize the length of each sequence, truncating
+        # those above the length and padding those below
+        # ref INM706 Lab5
+
+        seq_len = len(indices)
+
+        # Truncate sequence if too long
+        if seq_len > self.max_seq_length: indices = indices[:self.max_seq_length]
+
+        # Add the EOS
+        indices.append(Vocabulary.EOS_index)
+
+        # If the length of the original seq is less than the max, then pad
+        if seq_len < (self.max_seq_length):
+            # ref: https://stackoverflow.com/questions/3438756/some-built-in-to-pad-a-list-in-python
+            indices += [Vocabulary.PAD_index] * (self.max_seq_length - seq_len)
+
+        # Insert the SOS index
+        indices.insert(0, Vocabulary.SOS_index)
+
+        Q_tensor = torch.tensor(indices, dtype=torch.int64)
+
+        return Q_tensor
 
 class CornellMovieCorpus(Corpus):
     def __init__(self, max_seq_length=10, convo_mode=Corpus.FULL):
