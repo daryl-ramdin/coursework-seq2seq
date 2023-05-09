@@ -10,7 +10,7 @@ import os
 import numpy as np
 import torch
 from corpus import Corpus, CornellMovieCorpus, Vocabulary
-from rnn import GRUEncoder, GRUDecoder, AttentionDecoder, EncoderRNN, LuongAttnDecoderRNN
+from rnn import GRUEncoder, GRUDecoder, AttentionEncoder, AttentionDecoder
 from torch import optim
 import torch.nn as nn
 from matplotlib import pyplot as plt
@@ -18,7 +18,7 @@ from datetime import datetime
 import random
 from torch.utils.data import DataLoader as DataLoader
 from metrics import show_loss
-from utils import  evaluate, maskNLLLoss
+from utils import  evaluate, maskNLLLoss, CrossEntropyLoss
 
 
 # <h2>Parameter Settings</h2>
@@ -30,13 +30,18 @@ random.seed(77)
 EXPERIMENT_NAME = "v1_exp1"
 SIZEOF_EMBEDDING = 128
 NUMBER_OF_EPOCHS = 1
-BATCH_SIZE = 1
-TEACHER_FORCING = 0
+BATCH_SIZE = 5
+TEACHER_FORCING = 1
 TEACHER_FORCING_DECAY = 0
 PROGRESS_INTERVAL = 100
-EVAL_INTERVAL = 100
+EVAL_INTERVAL = 1000
 LEARNING_RATE = 1e-03
-BACKPROPAGATE_INTERVAL = 100
+BACKPROPAGATE_INTERVAL = 1
+DROPOUT = 0.1
+BIDIRECTIONAL = True
+NUMBER_OF_LAYERS = 2
+CRITERION = CrossEntropyLoss
+USE_ATTENTION = False
 
 
 # <h2>Use the GPU if present</h2>
@@ -55,7 +60,7 @@ print(device)
 # In[4]:
 
 
-corpus = CornellMovieCorpus(device=device, data_directory = "../data", 
+corpus = CornellMovieCorpus(device=device, data_directory = "../data",
                             limit_pairs=True, limit_words = True, max_seq_length=10, min_word_count=3)
 
 
@@ -85,9 +90,19 @@ print(len(corpus.conversations), "exchange pairs")
 
 
 sizeof_vocab = corpus.vocabulary.len
+#If BIDIRECTIONAL, then the number of layers in the Decoder must be twice the number in the Encoder
+if BIDIRECTIONAL: 
+    decoder_layers = 2 * NUMBER_OF_LAYERS
+else:
+    decoder_layers = NUMBER_OF_LAYERS
 
-encoder = GRUEncoder(sizeof_vocab, SIZEOF_EMBEDDING)
-decoder = GRUDecoder(SIZEOF_EMBEDDING, sizeof_vocab)
+if USE_ATTENTION:   
+    encoder = AttentionEncoder(sizeof_vocab = sizeof_vocab, sizeof_embedding = SIZEOF_EMBEDDING, num_layers = NUMBER_OF_LAYERS,
+                               bidirectional=BIDIRECTIONAL, dropout=DROPOUT)
+    decoder = AttentionDecoder(sizeof_embedding=SIZEOF_EMBEDDING, sizeof_vocab=sizeof_vocab, num_layers=decoder_layers,dropout=DROPOUT)
+else:
+    encoder = GRUEncoder(sizeof_embedding=SIZEOF_EMBEDDING, sizeof_vocab=sizeof_vocab, num_layers = NUMBER_OF_LAYERS, bidirectional=BIDIRECTIONAL, dropout=DROPOUT)
+    decoder = GRUDecoder(sizeof_embedding= SIZEOF_EMBEDDING, sizeof_vocab = sizeof_vocab, num_layers = decoder_layers, dropout=DROPOUT)
 
 # embedding = nn.Embedding(sizeof_vocab, SIZEOF_EMBEDDING)
 # # Initialize encoder & decoder models
@@ -106,10 +121,10 @@ decoder.to(device)
 encoder_optimizer = optim.Adam(encoder.parameters(),lr=LEARNING_RATE)
 decoder_optimizer = optim.Adam(decoder.parameters(),lr=LEARNING_RATE)
 
+#criterion = NegativeLLLoss
 #criterion = nn.CrossEntropyLoss(ignore_index = Vocabulary.PAD_index)
-criterion = nn.CrossEntropyLoss(ignore_index = Vocabulary.PAD_index)
 
-#criterion = maskNLLLoss
+
 
 #ref: https://discuss.pytorch.org/t/how-to-create-a-dataloader-with-variable-size-input/8278/3?u=ptrblck
 dataloader = DataLoader(corpus, batch_size=BATCH_SIZE,shuffle=True, collate_fn=Corpus.collate_convos)
@@ -119,7 +134,7 @@ batch_type = "Exchange Pair"
 
 # <h2>Train</h2>
 
-# In[ ]:
+# In[8]:
 
 
 epoch_loss = 0
@@ -167,6 +182,11 @@ for epoch in range(NUMBER_OF_EPOCHS):
         #Get the batch size and sequence length
         batch_size = A_tensors.shape[0] #Number of sequences in the target
         seq_length = A_tensors.shape[1] #All sequences are fixed length
+        
+        #We set seq_length to the length of the longest sequence so that
+        # in calculating the loss we do not pass a tensor full of padding
+        # tokens as this returns a nan
+        seq_length = max(A_lens)
 
         #Transpose to tensors are now seq_length, batch_size
         Q_tensors = torch.transpose(Q_tensors,0,1)
@@ -196,16 +216,16 @@ for epoch in range(NUMBER_OF_EPOCHS):
         for i in range(seq_length):
             
             #Get the decoder output and hidden state for the
-            decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden) #decoder_output (1, batch_size, sizeof_vocab), decoder_hidden (batch_size, sizeof_hidden)
+            decoder_output, decoder_hidden = decoder(decoder_input, decoder_hidden, encoder_output) #decoder_output (1, batch_size, sizeof_vocab), decoder_hidden (batch_size, sizeof_hidden)
 
-            decoder_output = decoder_output.squeeze(0)
+            #decoder_output = decoder_output.squeeze(0)
             # calculate the loss by comparing with the tensor of the target
             target = A_tensors[i,:]
 
-            loss += criterion(decoder_output,target)
+            #loss += criterion(decoder_output,target).mean()
 
-            # mask_loss, nTotal = maskNLLLoss(decoder_output, target, A_masks[i,:], device)
-            # loss+=mask_loss
+            mask_loss, nTotal = CRITERION(decoder_output, target, A_masks[i,:], device)
+            loss+=mask_loss
 
             #Get the top prediction for each batch
             decoder_input = decoder_output.topk(k=1, dim=1).indices
@@ -218,16 +238,18 @@ for epoch in range(NUMBER_OF_EPOCHS):
             if teacher_forcing: decoder_input = target.view(1,-1)
         
         propagation_loss += loss
-        sequence_loss = loss.item()/corpus.max_seq_length
+        sequence_loss = loss.item()/seq_length
         interval_loss += sequence_loss
 
 
         TEACHER_FORCING = max(0,TEACHER_FORCING - (TEACHER_FORCING*TEACHER_FORCING_DECAY))
         
-        if batch_counter%BACKPROPAGATE_INTERVAL == 0 and batch_counter != 0:
+        if batch_counter%BACKPROPAGATE_INTERVAL == 0:
             propagation_loss.backward()
-            # _ = nn.utils.clip_grad_norm_(encoder.parameters(), 50)
-            # _ = nn.utils.clip_grad_norm_(decoder.parameters(), 50)
+            # ref: https://pytorch.org/tutorials/beginner/chatbot_tutorial.html?highlight=chatbot%20tutorial
+            _ = nn.utils.clip_grad_norm_(encoder.parameters(), 50)
+            _ = nn.utils.clip_grad_norm_(decoder.parameters(), 50)
+                
             encoder_optimizer.step()
             decoder_optimizer.step()
             propagation_loss = 0
@@ -243,7 +265,7 @@ for epoch in range(NUMBER_OF_EPOCHS):
             interval_seq_count = 0
 
         if batch_counter%EVAL_INTERVAL == 0 and batch_counter!=0:
-            evaluate("What is your favourite food?",encoder,decoder,corpus, device)
+            evaluate("Hi! how are you?",encoder,decoder,corpus, device)
 
         training_loss.append([batch_counter,sequence_loss])
         batch_counter += 1
@@ -251,7 +273,7 @@ for epoch in range(NUMBER_OF_EPOCHS):
 
 # <h2>Save and print results</h2>
 
-# In[ ]:
+# In[9]:
 
 
 data_file = EXPERIMENT_NAME + ".csv"
@@ -260,10 +282,40 @@ torch.save(encoder.state_dict(), EXPERIMENT_NAME + "_encoder.dict")
 torch.save(decoder.state_dict(), EXPERIMENT_NAME + "_decoder.dict")
 
 
-# In[ ]:
+# In[10]:
 
 
 show_loss(data_file,100)
+
+
+# In[11]:
+
+
+def show_average_accumulated_loss(data_file):
+    training_loss = np.genfromtxt(data_file,delimiter=",")
+    average_loss = []
+    for i in range(1,len(training_loss)):
+        #print(sum(training_loss[i-interval:i,1])/interval)
+        average_loss.append([i, sum(training_loss[:i,1])/i] )
+    average_loss = np.array(average_loss)
+    plt.plot(average_loss[:, 0], average_loss[:, 1])
+    plt.show()
+show_average_accumulated_loss(data_file)
+
+
+# In[13]:
+
+
+txt = ""
+while txt != "Bye!":
+    txt = input()
+    evaluate(txt,encoder,decoder,corpus, device)
+
+
+# In[ ]:
+
+
+
 
 
 # In[ ]:
