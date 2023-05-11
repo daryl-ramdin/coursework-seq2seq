@@ -10,14 +10,14 @@ import os
 import numpy as np
 import torch
 from corpus import Corpus, CornellMovieCorpus, Vocabulary
-from rnn import GRUEncoder, GRUDecoder, AttentionEncoder, AttentionDecoder
+from rnn import GRUEncoder, GRUDecoder, AttentionDecoderLuong, AttentionDecoderBahdanau
 from torch import optim
 import torch.nn as nn
 from matplotlib import pyplot as plt
 from datetime import datetime
 import random
 from torch.utils.data import DataLoader as DataLoader
-from metrics import show_loss
+from metrics import show_loss, show_average_accumulated_loss
 from utils import  evaluate, maskNLLLoss, CrossEntropyLoss
 
 
@@ -27,21 +27,21 @@ from utils import  evaluate, maskNLLLoss, CrossEntropyLoss
 
 
 random.seed(77)
-EXPERIMENT_NAME = "v1_exp1"
+EXPERIMENT_NAME = "exp1"
 SIZEOF_EMBEDDING = 128
 NUMBER_OF_EPOCHS = 1
 BATCH_SIZE = 5
-TEACHER_FORCING = 1
+TEACHER_FORCING = 0
 TEACHER_FORCING_DECAY = 0
 PROGRESS_INTERVAL = 100
 EVAL_INTERVAL = 1000
 LEARNING_RATE = 1e-03
 BACKPROPAGATE_INTERVAL = 1
-DROPOUT = 0.1
-BIDIRECTIONAL = True
-NUMBER_OF_LAYERS = 2
+DROPOUT = 0
+BIDIRECTIONAL = False
+NUMBER_OF_LAYERS = 1
 CRITERION = CrossEntropyLoss
-USE_ATTENTION = False
+ATTENTION = "None" # Either None, Luong, Bahdanau
 
 
 # <h2>Use the GPU if present</h2>
@@ -57,7 +57,7 @@ print(device)
 
 # <h2>Create a Cornell Movie Corpus </h2>
 
-# In[4]:
+# In[ ]:
 
 
 corpus = CornellMovieCorpus(device=device, data_directory = "../data",
@@ -66,7 +66,7 @@ corpus = CornellMovieCorpus(device=device, data_directory = "../data",
 
 # <h2>Let's look at some data</h2>
 
-# In[5]:
+# In[ ]:
 
 
 lines = list(corpus.movie_lines.items())
@@ -86,7 +86,7 @@ print(len(corpus.conversations), "exchange pairs")
 
 # <h2>Create Encoders and Decoders</h2>
 
-# In[6]:
+# In[ ]:
 
 
 sizeof_vocab = corpus.vocabulary.len
@@ -96,12 +96,17 @@ if BIDIRECTIONAL:
 else:
     decoder_layers = NUMBER_OF_LAYERS
 
-if USE_ATTENTION:   
-    encoder = AttentionEncoder(sizeof_vocab = sizeof_vocab, sizeof_embedding = SIZEOF_EMBEDDING, num_layers = NUMBER_OF_LAYERS,
-                               bidirectional=BIDIRECTIONAL, dropout=DROPOUT)
-    decoder = AttentionDecoder(sizeof_embedding=SIZEOF_EMBEDDING, sizeof_vocab=sizeof_vocab, num_layers=decoder_layers,dropout=DROPOUT)
+encoder = GRUEncoder(sizeof_embedding=SIZEOF_EMBEDDING, sizeof_vocab=sizeof_vocab, num_layers = NUMBER_OF_LAYERS, bidirectional=BIDIRECTIONAL, dropout=DROPOUT)
+    
+    
+if ATTENTION == "Luong":  
+    print("Creating Luong Decoder")
+    decoder = AttentionDecoderLuong(sizeof_embedding=SIZEOF_EMBEDDING, sizeof_vocab=sizeof_vocab, num_layers=decoder_layers,dropout=DROPOUT)
+elif ATTENTION == "Bahdanau":
+    print("Creating Bahdanau Decoder")
+    decoder = AttentionDecoderBahdanau(sizeof_embedding=SIZEOF_EMBEDDING, sizeof_vocab=sizeof_vocab, num_layers=decoder_layers,dropout=DROPOUT)
 else:
-    encoder = GRUEncoder(sizeof_embedding=SIZEOF_EMBEDDING, sizeof_vocab=sizeof_vocab, num_layers = NUMBER_OF_LAYERS, bidirectional=BIDIRECTIONAL, dropout=DROPOUT)
+    print("Using Simple Encoder")
     decoder = GRUDecoder(sizeof_embedding= SIZEOF_EMBEDDING, sizeof_vocab = sizeof_vocab, num_layers = decoder_layers, dropout=DROPOUT)
 
 # embedding = nn.Embedding(sizeof_vocab, SIZEOF_EMBEDDING)
@@ -115,7 +120,7 @@ decoder.to(device)
 
 # <h2>Let's setup our trainer</h2>
 
-# In[7]:
+# In[ ]:
 
 
 encoder_optimizer = optim.Adam(encoder.parameters(),lr=LEARNING_RATE)
@@ -134,7 +139,7 @@ batch_type = "Exchange Pair"
 
 # <h2>Train</h2>
 
-# In[8]:
+# In[ ]:
 
 
 epoch_loss = 0
@@ -247,8 +252,8 @@ for epoch in range(NUMBER_OF_EPOCHS):
         if batch_counter%BACKPROPAGATE_INTERVAL == 0:
             propagation_loss.backward()
             # ref: https://pytorch.org/tutorials/beginner/chatbot_tutorial.html?highlight=chatbot%20tutorial
-            _ = nn.utils.clip_grad_norm_(encoder.parameters(), 50)
-            _ = nn.utils.clip_grad_norm_(decoder.parameters(), 50)
+            _ = nn.utils.clip_grad_norm_(encoder.parameters(), 1)
+            _ = nn.utils.clip_grad_norm_(decoder.parameters(), 1)
                 
             encoder_optimizer.step()
             decoder_optimizer.step()
@@ -273,7 +278,7 @@ for epoch in range(NUMBER_OF_EPOCHS):
 
 # <h2>Save and print results</h2>
 
-# In[9]:
+# In[ ]:
 
 
 data_file = EXPERIMENT_NAME + ".csv"
@@ -282,28 +287,19 @@ torch.save(encoder.state_dict(), EXPERIMENT_NAME + "_encoder.dict")
 torch.save(decoder.state_dict(), EXPERIMENT_NAME + "_decoder.dict")
 
 
-# In[10]:
+# In[ ]:
 
 
 show_loss(data_file,100)
 
 
-# In[11]:
+# In[ ]:
 
 
-def show_average_accumulated_loss(data_file):
-    training_loss = np.genfromtxt(data_file,delimiter=",")
-    average_loss = []
-    for i in range(1,len(training_loss)):
-        #print(sum(training_loss[i-interval:i,1])/interval)
-        average_loss.append([i, sum(training_loss[:i,1])/i] )
-    average_loss = np.array(average_loss)
-    plt.plot(average_loss[:, 0], average_loss[:, 1])
-    plt.show()
 show_average_accumulated_loss(data_file)
 
 
-# In[13]:
+# In[ ]:
 
 
 txt = ""

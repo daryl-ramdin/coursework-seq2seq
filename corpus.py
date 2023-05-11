@@ -261,7 +261,7 @@ class CornellMovieCorpus(Corpus):
         # text of the utterance
         print("Loading movie lines...")
         movie_lines = {}
-        filepath = os.path.join(self.data_directory, "../../../../../../../Downloads/movie_lines.txt")
+        filepath = os.path.join(self.data_directory, "movie_lines.txt")
         with open(filepath, 'r', encoding="iso-8859-1") as lines:
             for line in lines:
                 line_items = line.split(' +++$+++ ')
@@ -349,7 +349,7 @@ class CornellMovieCorpus(Corpus):
         # list of the utterances that make the conversation, in chronological
         # order: ['lineID1','lineID2',É,'lineIDN']
         movie_convos = []
-        movie_convos_path = os.path.join(self.data_directory, "../../../../../../../Downloads/movie_conversations.txt")
+        movie_convos_path = os.path.join(self.data_directory, "movie_conversations.txt")
         with open(movie_convos_path, 'r', encoding="iso-8859-1") as convos:
             for convo in convos:
                 movie_convos.append(convo.strip().split(' +++$+++ '))
