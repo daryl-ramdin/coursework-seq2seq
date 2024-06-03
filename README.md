@@ -1,4 +1,4 @@
-This project is my coursework project while at university. It creates a seq2seq based chatbot using Gated Recurrent Units (GRU).
+This project is my coursework on sequential analysis while doing my Masters at City, University of London. It creates a seq2seq based chatbot using Gated Recurrent Units (GRU).
 It looks the examine the impact of the following:
 
   GRU Tuning:
