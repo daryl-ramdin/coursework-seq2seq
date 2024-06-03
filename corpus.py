@@ -106,7 +106,7 @@ class Corpus(Dataset):
 
     def data_prep(self, sentence):
         # remove non-alphanumeric
-        # ref INM706 Lab 5
+        # ref Lab 5
         prepped = re.sub(r"\W+", " ", sentence).strip().lower()
         return prepped
 
@@ -129,7 +129,7 @@ class Corpus(Dataset):
 
         # We then standardize the length of each sequence, truncating
         # those above the length and padding those below
-        # ref INM706 Lab5
+        # ref Lab5
         i = 0
         for i in range(2):
             # Get the sequence length
@@ -177,7 +177,7 @@ class Corpus(Dataset):
 
         # We then standardize the length of each sequence, truncating
         # those above the length and padding those below
-        # ref INM706 Lab5
+        # ref Lab5
 
         # Add the EOS
         indices.append(Vocabulary.EOS_index)
@@ -252,7 +252,7 @@ class CornellMovieCorpus(Corpus):
         # Let's load the movie lines. For each line we
         # will store the original text as well as the prepped text
         # ref: https://www.kaggle.com/datasets/Cornell-University/movie-dialog-corpus?resource=download
-        # ref: INM706 Lab 5
+        # ref: Lab 5
         # This is tab separated file in the format in the format:
         # lineID
         # characterID (who uttered this phrase)
@@ -271,7 +271,7 @@ class CornellMovieCorpus(Corpus):
         return movie_lines
 
     def convolines2text(self):
-        # ref: INM706 Lab 5
+        # ref: Lab 5
         print("Converting conversation line numbers to text...")
         movie_convo_lines = []
         for i, convo in enumerate(self.movie_convos):
@@ -320,7 +320,7 @@ class CornellMovieCorpus(Corpus):
         # We need to convert our conversations to text
         # and then create a chain of links. Each
         # link is an exchange pair between two people
-        # ref: INM706 Lab 5
+        # ref: Lab 5
         # We need to convert our conversations to text.
         movie_convo_lines = self.convolines2text()
 
@@ -341,7 +341,7 @@ class CornellMovieCorpus(Corpus):
     def load_movie_conversations(self):
         # Let's load the conversations.
         # ref: https://www.kaggle.com/datasets/Cornell-University/movie-dialog-corpus?resource=download
-        # ref: INM706 Lab 5
+        # ref: Lab 5
         # They are in the format:
         # characterID of the first character involved in the conversation
         # characterID of the second character involved in the conversation
